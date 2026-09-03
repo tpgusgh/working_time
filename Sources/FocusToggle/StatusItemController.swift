@@ -4,6 +4,7 @@ final class StatusItemController: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let state = ToggleState()
     private let clockOverlay = ClockOverlayController()
+    private var scheduledOffTimer: Timer?
 
     override init() {
         super.init()
@@ -35,6 +36,8 @@ final class StatusItemController: NSObject {
         } else {
             clockOverlay.hide()
         }
+        scheduledOffTimer?.invalidate()
+        scheduledOffTimer = nil
         let action: FocusAction = isOn ? .turnOn : .turnOff
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let succeeded = FocusActionRunner.run(action)
@@ -44,6 +47,45 @@ final class StatusItemController: NSObject {
                 }
             }
         }
+        if isOn {
+            promptForScheduledOff()
+        }
+    }
+
+    private func promptForScheduledOff() {
+        let alert = NSAlert()
+        alert.messageText = "종료 시간 설정 (선택)"
+        alert.informativeText = "이 시간이 되면 자동으로 꺼지고 화면에 알림이 뜹니다. 필요 없으면 \"설정 안 함\"을 누르세요."
+        let picker = NSDatePicker(frame: NSRect(x: 0, y: 0, width: 100, height: 24))
+        picker.datePickerElements = .hourMinute
+        picker.datePickerMode = .single
+        picker.dateValue = Date()
+        alert.accessoryView = picker
+        alert.addButton(withTitle: "설정")
+        alert.addButton(withTitle: "설정 안 함")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let calendar = Calendar.current
+        let now = Date()
+        let components = calendar.dateComponents([.hour, .minute], from: picker.dateValue)
+        guard let target = calendar.nextDate(after: now, matching: components, matchingPolicy: .nextTime) else { return }
+
+        scheduledOffTimer = Timer.scheduledTimer(withTimeInterval: target.timeIntervalSince(now), repeats: false) { [weak self] _ in
+            self?.fireScheduledOff()
+        }
+    }
+
+    private func fireScheduledOff() {
+        scheduledOffTimer = nil
+        guard state.isOn else { return }
+        _ = state.toggle()
+        updateIcon(isOn: false)
+        clockOverlay.hide()
+        DispatchQueue.global(qos: .userInitiated).async {
+            FocusActionRunner.run(.turnOff)
+        }
+        ShiftEndNotificationController().show(message: "포커스 종료 시간이에요")
     }
 
     private func updateIcon(isOn: Bool) {
