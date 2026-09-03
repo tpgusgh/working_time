@@ -17,6 +17,7 @@
 - No persistence across relaunch; state always starts `false`.
 - Do not read live system DND/clock state — only track what this app last set.
 - Personal use, unsigned — no notarization/signing step in the build.
+- **[Added post-Task-7, see Task 8]** Clock-hiding is an overlay window over the AX-detected clock frame, not a `defaults write` trick — the original approach doesn't work on this machine's macOS. Requires Accessibility permission.
 
 ---
 
@@ -32,6 +33,8 @@
 - `Tests/FocusToggleTests/ToggleStateTests.swift` — tests state flips correctly.
 - `Tests/FocusToggleTests/FocusActionTests.swift` — tests the exact command arrays for each action.
 - `Scripts/build-app.sh` — wraps the release binary into `FocusToggle.app` with an `LSUIElement` Info.plist.
+- **[Task 8]** `Sources/FocusToggle/ClockOverlayController.swift` — finds the `com.apple.menuextra.clock` AX element on `ControlCenter`, then shows/hides a borderless black `NSWindow` over it on every connected screen. Contains a nested pure type `ClockOverlayGeometry` (screen-transform math, no AppKit window creation) kept separately testable from the AppKit side effects, matching the `FocusAction`/`FocusActionRunner` split.
+- **[Task 8]** `Tests/FocusToggleTests/ClockOverlayGeometryTests.swift` — tests the pure geometry transform.
 
 ---
 
@@ -554,4 +557,276 @@ In Finder, right-click `FocusToggle.app` → Open (first run only, to pass Gatek
 ```bash
 git add Scripts/build-app.sh
 git commit -m "chore: add build-app.sh to package FocusToggle.app"
+```
+
+---
+
+### Task 8: Replace clock-hiding with an AX-detected overlay window
+
+**Why this task exists:** After Tasks 1-7 shipped and a final-review fix wave corrected the `defaults write` command, live testing on this machine (macOS 26 "Tahoe") showed the whole approach is dead — `ControlCenter` overwrites the preference key within ~1s of restarting, and this is a confirmed, currently-unfixed OS regression (even Apple's own GUI toggle for hiding the clock is broken on this OS version). No `defaults`/`killall` trick, and no third-party menu-bar-hiding technique (including tools built specifically for macOS 26), can hide the system clock — it's drawn by `ControlCenter`, not a foreign `NSStatusItem`, so the usual "capture and overlay" tricks other tools use don't reach it either.
+
+The approach that DOES work, verified live on this machine (spiked as a standalone script, confirmed visually on both displays of a 2-monitor setup): don't hide the clock, cover it. Find its exact screen position via the Accessibility API and place a plain black borderless window on top of it, at a window level above the menu bar.
+
+**Files:**
+- Modify: `Sources/FocusToggle/FocusAction.swift` — the `.turnOn`/`.turnOff` command arrays lose their `defaults`/`killall` entries; only the `shortcuts run` command remains.
+- Modify: `Tests/FocusToggleTests/FocusActionTests.swift` — update expected arrays to match.
+- Modify: `Sources/FocusToggle/StatusItemController.swift` — `toggle()` also drives a new `ClockOverlayController`.
+- Create: `Sources/FocusToggle/ClockOverlayController.swift` — the overlay windows plus the pure geometry math.
+- Create: `Tests/FocusToggleTests/ClockOverlayGeometryTests.swift` — tests the pure geometry transform.
+
+**Interfaces:**
+- Consumes: nothing new from earlier tasks beyond what `StatusItemController` already has.
+- Produces: `enum ClockOverlayGeometry { static func overlayFrame(forScreen: CGRect, primaryScreenFrame: CGRect, clockFrame: CGRect, padding: CGFloat) -> CGRect }` (pure, unit-tested) and `final class ClockOverlayController { func show(); func hide() }` (AppKit + AX side effects, not unit-tested — same rationale as `FocusActionRunner`: it touches real system state, here the screen's window server).
+
+- [ ] **Step 1: Update `FocusAction.swift`**
+
+```swift
+enum FocusAction {
+    case turnOn
+    case turnOff
+
+    var commands: [[String]] {
+        switch self {
+        case .turnOn:
+            return [
+                ["/usr/bin/shortcuts", "run", "FocusOn"]
+            ]
+        case .turnOff:
+            return [
+                ["/usr/bin/shortcuts", "run", "FocusOff"]
+            ]
+        }
+    }
+}
+```
+
+- [ ] **Step 2: Update `FocusActionTests.swift` to match**
+
+```swift
+import XCTest
+@testable import FocusToggle
+
+final class FocusActionTests: XCTestCase {
+    func test_turnOnCommands() {
+        XCTAssertEqual(FocusAction.turnOn.commands, [
+            ["/usr/bin/shortcuts", "run", "FocusOn"]
+        ])
+    }
+
+    func test_turnOffCommands() {
+        XCTAssertEqual(FocusAction.turnOff.commands, [
+            ["/usr/bin/shortcuts", "run", "FocusOff"]
+        ])
+    }
+}
+```
+
+- [ ] **Step 3: Run the updated test, confirm it passes**
+
+Run: `swift test --filter FocusActionTests`
+Expected: PASS, 2 tests, with the new 1-command arrays.
+
+- [ ] **Step 4: Write the failing geometry test**
+
+```swift
+import XCTest
+@testable import FocusToggle
+
+final class ClockOverlayGeometryTests: XCTestCase {
+    // Mirrors the live-verified setup: a 1512-wide primary screen (clock at
+    // x=1371, w=135, "5pt from top", h=22) and a second 1920-wide screen
+    // to its left at x=-1920.
+    let primaryScreenFrame = CGRect(x: 0, y: 0, width: 1512, height: 982)
+    let clockFrame = CGRect(x: 1371, y: 5, width: 135, height: 22)
+
+    func test_overlayOnPrimaryScreen_noPadding() {
+        let frame = ClockOverlayGeometry.overlayFrame(
+            forScreen: primaryScreenFrame,
+            primaryScreenFrame: primaryScreenFrame,
+            clockFrame: clockFrame,
+            padding: 0
+        )
+        XCTAssertEqual(frame, CGRect(x: 1371, y: 955, width: 135, height: 22))
+    }
+
+    func test_overlayOnSecondaryScreen_toTheLeft_noPadding() {
+        let secondaryScreenFrame = CGRect(x: -1920, y: 0, width: 1920, height: 1080)
+        let frame = ClockOverlayGeometry.overlayFrame(
+            forScreen: secondaryScreenFrame,
+            primaryScreenFrame: primaryScreenFrame,
+            clockFrame: clockFrame,
+            padding: 0
+        )
+        XCTAssertEqual(frame, CGRect(x: -141, y: 1053, width: 135, height: 22))
+    }
+
+    func test_paddingGrowsFrameSymmetrically() {
+        let frame = ClockOverlayGeometry.overlayFrame(
+            forScreen: primaryScreenFrame,
+            primaryScreenFrame: primaryScreenFrame,
+            clockFrame: clockFrame,
+            padding: 6
+        )
+        XCTAssertEqual(frame, CGRect(x: 1365, y: 949, width: 147, height: 34))
+    }
+}
+```
+
+(These expected values match the plan author's own live spike run on this machine — see Task 8's context note. If your build environment computes different numbers, trust the math, not these literals: re-derive them from the formula in Step 5 and use those instead, but flag the discrepancy in your report.)
+
+- [ ] **Step 5: Run it, confirm it fails**
+
+Run: `swift test --filter ClockOverlayGeometryTests`
+Expected: FAIL — `ClockOverlayGeometry` does not exist yet.
+
+- [ ] **Step 6: Write `ClockOverlayController.swift`**
+
+```swift
+import AppKit
+import ApplicationServices
+
+enum ClockOverlayGeometry {
+    static func overlayFrame(forScreen screenFrame: CGRect, primaryScreenFrame: CGRect, clockFrame: CGRect, padding: CGFloat) -> CGRect {
+        let padded = clockFrame.insetBy(dx: -padding, dy: -padding)
+        let distanceFromRightEdge = primaryScreenFrame.maxX - padded.maxX
+        let x = screenFrame.maxX - distanceFromRightEdge - padded.width
+        let y = screenFrame.maxY - padded.minY - padded.height
+        return CGRect(x: x, y: y, width: padded.width, height: padded.height)
+    }
+}
+
+final class ClockOverlayController {
+    private let overlayPadding: CGFloat = 6
+    private var overlayWindows: [NSWindow] = []
+
+    func show() {
+        guard overlayWindows.isEmpty else { return }
+        guard let clockFrame = findClockFrame() else {
+            presentAccessibilityAlert()
+            return
+        }
+        guard let primaryScreen = NSScreen.screens.first else { return }
+        for screen in NSScreen.screens {
+            let frame = ClockOverlayGeometry.overlayFrame(
+                forScreen: screen.frame,
+                primaryScreenFrame: primaryScreen.frame,
+                clockFrame: clockFrame,
+                padding: overlayPadding
+            )
+            let window = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
+            window.backgroundColor = .black
+            window.isOpaque = true
+            window.hasShadow = false
+            window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+            window.ignoresMouseEvents = true
+            window.orderFrontRegardless()
+            overlayWindows.append(window)
+        }
+    }
+
+    func hide() {
+        overlayWindows.forEach { $0.orderOut(nil) }
+        overlayWindows.removeAll()
+    }
+
+    private func findClockFrame() -> CGRect? {
+        guard AXIsProcessTrusted() else { return nil }
+        guard let controlCenter = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.controlcenter" }) else {
+            return nil
+        }
+        let appElement = AXUIElementCreateApplication(controlCenter.processIdentifier)
+
+        var menuBarValue: AnyObject?
+        guard AXUIElementCopyAttributeValue(appElement, kAXMenuBarAttribute as CFString, &menuBarValue) == .success,
+              let menuBar = menuBarValue else { return nil }
+
+        var itemsValue: AnyObject?
+        guard AXUIElementCopyAttributeValue(menuBar as! AXUIElement, kAXChildrenAttribute as CFString, &itemsValue) == .success,
+              let items = itemsValue as? [AXUIElement] else { return nil }
+
+        for item in items {
+            var identifierValue: AnyObject?
+            AXUIElementCopyAttributeValue(item, "AXIdentifier" as CFString, &identifierValue)
+            guard (identifierValue as? String) == "com.apple.menuextra.clock" else { continue }
+
+            var positionValue: AnyObject?
+            var sizeValue: AnyObject?
+            guard AXUIElementCopyAttributeValue(item, kAXPositionAttribute as CFString, &positionValue) == .success,
+                  AXUIElementCopyAttributeValue(item, kAXSizeAttribute as CFString, &sizeValue) == .success else { return nil }
+
+            var position = CGPoint.zero
+            var size = CGSize.zero
+            AXValueGetValue(positionValue as! AXValue, .cgPoint, &position)
+            AXValueGetValue(sizeValue as! AXValue, .cgSize, &size)
+            return CGRect(origin: position, size: size)
+        }
+        return nil
+    }
+
+    private func presentAccessibilityAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Accessibility permission needed"
+        alert.informativeText = "FocusToggle needs Accessibility access to find and cover the menu bar clock. Grant it in System Settings \u{2192} Privacy & Security \u{2192} Accessibility."
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Close")
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+        }
+    }
+}
+```
+
+- [ ] **Step 7: Run the geometry test, confirm it passes**
+
+Run: `swift test --filter ClockOverlayGeometryTests`
+Expected: PASS, 3 tests. If your live numbers differ from Step 4's literals (different display arrangement in this environment), re-derive the expected values from the formula and note it — do not change the formula to fit stale literals.
+
+- [ ] **Step 8: Wire `ClockOverlayController` into `StatusItemController`**
+
+Modify `StatusItemController.swift`: add a `private let clockOverlay = ClockOverlayController()` property, and change `toggle()` to drive it alongside `FocusActionRunner`:
+
+```swift
+private func toggle() {
+    let isOn = state.toggle()
+    updateIcon(isOn: isOn)
+    if isOn {
+        clockOverlay.show()
+    } else {
+        clockOverlay.hide()
+    }
+    let action: FocusAction = isOn ? .turnOn : .turnOff
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        let succeeded = FocusActionRunner.run(action)
+        if !succeeded {
+            DispatchQueue.main.async {
+                self?.showSetupInstructions()
+            }
+        }
+    }
+}
+```
+
+Everything else in `StatusItemController.swift` stays as-is.
+
+- [ ] **Step 9: Full build + regression suite**
+
+Run: `swift build && swift test`
+Expected: build succeeds; all tests pass (2 `ToggleStateTests` + 2 `FocusActionTests` + 3 `ClockOverlayGeometryTests` = 7 tests).
+
+- [ ] **Step 10: Empirical verification (do this yourself, it's not GUI-interactive — just AX reads and non-destructive window creation)**
+
+1. Confirm Accessibility permission: run `swift run FocusToggle` once from a terminal that already has Accessibility access (or grant it when prompted), or check via `System Settings → Privacy & Security → Accessibility`.
+2. Add a temporary `print(findClockFrame() as Any)` (or equivalent) and confirm it returns a non-nil `CGRect` close to what a live AX probe reports for `com.apple.menuextra.clock` on this machine — cross-check with:
+   ```
+   osascript -e 'tell application "System Events" to tell process "ControlCenter" to get properties of (first menu bar item of menu bar 1 whose value of attribute "AXIdentifier" is "com.apple.menuextra.clock")'
+   ```
+3. Remove the temporary print before committing.
+4. If you can safely verify the overlay visually without disrupting the live user session (e.g., you're told this is an isolated test display, or the human controller does it), do a real `clockOverlay.show()` / `hide()` round-trip and confirm. If you cannot safely do this without disturbing the live desktop, say so explicitly in your report and leave final visual confirmation to the human controller — do not take full-screen screenshots of the live desktop under any circumstances.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add Sources/FocusToggle/FocusAction.swift Tests/FocusToggleTests/FocusActionTests.swift Sources/FocusToggle/StatusItemController.swift Sources/FocusToggle/ClockOverlayController.swift Tests/FocusToggleTests/ClockOverlayGeometryTests.swift
+git commit -m "feat: replace clock-hiding defaults trick with AX-detected overlay window"
 ```
