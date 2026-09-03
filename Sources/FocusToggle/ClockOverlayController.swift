@@ -86,10 +86,10 @@ final class ClockOverlayController {
 
     private func presentAccessibilityAlert() {
         let alert = NSAlert()
-        alert.messageText = "Accessibility permission needed"
-        alert.informativeText = "FocusToggle needs Accessibility access to find and cover the menu bar clock. Grant it in System Settings \u{2192} Privacy & Security \u{2192} Accessibility."
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Close")
+        alert.messageText = "손쉬운 사용 권한 필요"
+        alert.informativeText = "시계를 찾아서 가리려면 손쉬운 사용 권한이 필요합니다. 시스템 설정 \u{2192} 개인정보 보호 및 보안 \u{2192} 손쉬운 사용에서 허용해주세요."
+        alert.addButton(withTitle: "시스템 설정 열기")
+        alert.addButton(withTitle: "닫기")
         if alert.runModal() == .alertFirstButtonReturn {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
         }

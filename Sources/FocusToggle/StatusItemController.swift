@@ -49,17 +49,17 @@ final class StatusItemController: NSObject {
     private func updateIcon(isOn: Bool) {
         statusItem.button?.image = NSImage(
             systemSymbolName: isOn ? "moon.fill" : "moon",
-            accessibilityDescription: "Focus Toggle"
+            accessibilityDescription: "포커스 토글"
         )
     }
 
     private func showContextMenu() {
         let menu = NSMenu()
-        let setupItem = NSMenuItem(title: "Setup Instructions", action: #selector(showSetupInstructions), keyEquivalent: "")
+        let setupItem = NSMenuItem(title: "설정 방법", action: #selector(showSetupInstructions), keyEquivalent: "")
         setupItem.target = self
         menu.addItem(setupItem)
         menu.addItem(NSMenuItem.separator())
-        let quitItem = NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "종료", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
@@ -70,17 +70,17 @@ final class StatusItemController: NSObject {
 
     @objc private func showSetupInstructions() {
         let alert = NSAlert()
-        alert.messageText = "One-time setup"
+        alert.messageText = "최초 설정"
         alert.informativeText = """
-        Open Shortcuts.app and create two shortcuts:
+        Shortcuts 앱을 열어서 샷컷 2개를 만들어야 합니다:
 
-        1. "FocusOn" — one action: Set Focus \u{2192} On (Do Not Disturb)
-        2. "FocusOff" — one action: Set Focus \u{2192} Off
+        1. "FocusOn" — 액션 하나: Set Focus \u{2192} On (방해금지모드)
+        2. "FocusOff" — 액션 하나: Set Focus \u{2192} Off
 
-        FocusToggle runs these by name when you click the menu bar icon.
+        FocusToggle이 메뉴바 아이콘을 클릭할 때 이 이름으로 샷컷을 실행합니다.
         """
-        alert.addButton(withTitle: "Open Shortcuts.app")
-        alert.addButton(withTitle: "Close")
+        alert.addButton(withTitle: "Shortcuts 앱 열기")
+        alert.addButton(withTitle: "닫기")
         if alert.runModal() == .alertFirstButtonReturn {
             NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Shortcuts.app"))
         }
