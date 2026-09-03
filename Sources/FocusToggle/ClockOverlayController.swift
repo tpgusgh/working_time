@@ -19,6 +19,7 @@ enum ClockOverlayGeometry {
 final class ClockOverlayController {
     private let overlayPadding: CGFloat = 6
     private var overlayWindows: [NSWindow] = []
+    private var accessibilityWatchTimer: Timer?
 
     func show() {
         guard overlayWindows.isEmpty else { return }
@@ -102,11 +103,36 @@ final class ClockOverlayController {
     private func presentAccessibilityAlert() {
         let alert = NSAlert()
         alert.messageText = "손쉬운 사용 권한 필요"
-        alert.informativeText = "시계를 찾아서 가리려면 손쉬운 사용 권한이 필요합니다. 시스템 설정 \u{2192} 개인정보 보호 및 보안 \u{2192} 손쉬운 사용에서 허용해주세요."
+        alert.informativeText = "시계를 찾아서 가리려면 손쉬운 사용 권한이 필요합니다. 시스템 설정 \u{2192} 개인정보 보호 및 보안 \u{2192} 손쉬운 사용에서 허용해주세요. 허용하면 앱이 자동으로 재시작됩니다."
         alert.addButton(withTitle: "시스템 설정 열기")
         alert.addButton(withTitle: "닫기")
         if alert.runModal() == .alertFirstButtonReturn {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+            watchForAccessibilityGrant()
+        }
+    }
+
+    // Toggling the checkbox in System Settings doesn't retroactively unblock
+    // an already-running process's AX calls — the app has to relaunch for a
+    // freshly-granted permission to take effect. Poll until it's granted,
+    // then relaunch automatically so the user doesn't have to quit/reopen by hand.
+    private func watchForAccessibilityGrant() {
+        accessibilityWatchTimer?.invalidate()
+        accessibilityWatchTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
+            guard AXIsProcessTrusted() else { return }
+            timer.invalidate()
+            self?.relaunchApp()
+        }
+    }
+
+    private func relaunchApp() {
+        let bundleURL = Bundle.main.bundleURL
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration) { _, _ in
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
+            }
         }
     }
 }
