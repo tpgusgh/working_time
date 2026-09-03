@@ -47,7 +47,8 @@ final class ClockOverlayController {
     }
 
     private func findClockFrame() -> CGRect? {
-        guard AXIsProcessTrusted() else { return nil }
+        let options: [String: Bool] = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+        guard AXIsProcessTrustedWithOptions(options as CFDictionary) else { return nil }
         guard let controlCenter = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.controlcenter" }) else {
             return nil
         }
