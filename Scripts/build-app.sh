@@ -32,4 +32,6 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+codesign --force --sign - --identifier "com.mirkim.focustoggle" "$APP_BUNDLE"
+
 echo "Built ${APP_BUNDLE}"
