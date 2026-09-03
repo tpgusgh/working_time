@@ -78,4 +78,14 @@ Swift Package 단일 타깃(executable, AppKit), Xcode 프로젝트 없음, Elec
 
 ## 테스트
 
-`ToggleState`, `FocusAction`은 기존대로 순수 로직이라 단위 테스트함. 오버레이 위치 계산도 `ClockOverlayController`에서 AppKit 창 생성 로직과 분리한 순수 함수(`ClockOverlayGeometry.overlayFrame(forScreen:primaryScreenFrame:clockFrame:padding:)`)로 빼서 단위 테스트함 — AX/AppKit 없이 좌표 변환 수식만 검증. 실제 창 띄우기, AX 권한, Shortcuts 실행은 여전히 수동 검증임: 클릭해서 오버레이 뜨는지, Focus 켜지는지 확인, 다시 클릭해서 원복되는지 확인.
+`ToggleState`, `FocusAction`은 기존대로 순수 로직이라 단위 테스트함. 오버레이 위치 계산도 `ClockOverlayController`에서 AppKit 창 생성 로직과 분리한 순수 함수(`ClockOverlayGeometry.overlayFrame(forScreen:sourceScreenFrame:clockFrame:padding:)`)로 빼서 단위 테스트함 — AX/AppKit 없이 좌표 변환 수식만 검증. `sourceScreenFrame`은 시계가 실제로 있는 화면 기준(항상 주 디스플레이가 아님 — 아래 "멀티 모니터 버그" 참고). 실제 창 띄우기, AX 권한, Shortcuts 실행은 여전히 수동 검증임: 클릭해서 오버레이 뜨는지, Focus 켜지는지 확인, 다시 클릭해서 원복되는지 확인.
+
+## 멀티 모니터 버그 (발견 및 수정)
+
+AX는 시계 위치를 물을 때마다 "현재 활성화된 디스플레이"의 시계 위치를 돌려줌 — 항상 시스템이 지정한 주 디스플레이가 아님. 처음엔 이걸 몰라서 `ClockOverlayGeometry`가 항상 `NSScreen.screens.first`(주 디스플레이)를 기준으로 오프셋을 계산했는데, 서브 디스플레이 메뉴바에서 클릭하면 AX가 서브 디스플레이의 시계 좌표를 돌려주고, 그걸 "주 디스플레이 시계"인 것처럼 계산해서 주 디스플레이 쪽 오버레이가 완전히 엉뚱한 위치로 감 (서브 디스플레이 오버레이만 우연히 맞음). 고침: `ClockOverlayController.show()`가 시계의 실제 global X 좌표로 "시계가 진짜 어느 화면에 있는지" 찾아서(`sourceScreen`) 그 화면 기준으로 오프셋을 계산하도록 바꿈. 회귀 테스트(`test_clockReadFromSecondaryScreen_primaryOverlayStillCorrect`)로 고정함.
+
+## 예약 종료 + 종료 알림
+
+켜질 때(좌클릭) 토글 자체는 그대로 즉시 실행되고, 그 직후 시간 설정 알럿(`NSDatePicker`, 시:분)이 뜸 — "설정" 누르면 그 시각에 자동으로 꺼지도록 `Timer` 하나 예약, "설정 안 함" 누르면 기존과 동일하게 수동 토글만 있음. 매번 켤 때마다 새로 정하는 방식이라 영속화 안 함 (앱 전체 원칙과 일관됨). 이미 지난 시간을 입력하면 `Calendar.nextDate(after:matching:matchingPolicy:.nextTime)`가 자동으로 다음날 그 시각으로 잡아줌 — 별도 예외 처리 안 함.
+
+예약 시각이 되면: 수동으로 껐을 때와 같은 경로로 꺼짐(오버레이 숨김, DND 끔, 아이콘 갱신) + `ShiftEndNotificationController`가 연결된 모든 화면에 큰 흰 글씨 검은 배경 전체화면 창을 띄우고 5초 뒤 자동으로 닫음. 수동으로 먼저 끄거나 다시 토글하면 대기 중이던 타이머는 취소됨(`scheduledOffTimer?.invalidate()`).
