@@ -29,7 +29,15 @@ final class StatusItemController: NSObject {
     private func toggle() {
         let isOn = state.toggle()
         updateIcon(isOn: isOn)
-        FocusActionRunner.run(isOn ? .turnOn : .turnOff)
+        let action: FocusAction = isOn ? .turnOn : .turnOff
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let succeeded = FocusActionRunner.run(action)
+            if !succeeded {
+                DispatchQueue.main.async {
+                    self?.showSetupInstructions()
+                }
+            }
+        }
     }
 
     private func updateIcon(isOn: Bool) {
