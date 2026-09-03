@@ -19,16 +19,18 @@ Swift Package 단일 타깃(executable, AppKit), Xcode 프로젝트 없음, Elec
 ## 동작
 
 **켜질 때** (`isOn: false → true`):
-1. `defaults write com.apple.controlcenter Clock -bool false && killall SystemUIServer`
+1. `defaults write com.apple.controlcenter "NSStatusItem VisibleCC Clock" -int 0 && killall ControlCenter`
 2. `shortcuts run "FocusOn"`
 3. 아이콘이 채워진/강조 상태로 전환.
 
 **꺼질 때** (`isOn: true → false`):
-1. `defaults write com.apple.controlcenter Clock -bool true && killall SystemUIServer`
+1. `defaults write com.apple.controlcenter "NSStatusItem VisibleCC Clock" -int 1 && killall ControlCenter`
 2. `shortcuts run "FocusOff"`
 3. 아이콘이 윤곽선/기본 상태로 전환.
 
-두 동작 모두 `Process`(`/usr/bin/env`)로 클릭 핸들러에서 동기 실행 — 각 명령어 거의 즉시 끝나서 async/스피너 필요 없음.
+(최종 리뷰에서 수정됨: 원래 `Clock` 키는 이 머신에 존재하지 않았고, 실제 키는 `"NSStatusItem VisibleCC Clock"`이며 값 타입이 bool이 아니라 int임. 메뉴바 시계는 `SystemUIServer`가 아니라 `ControlCenter`가 그림 — Big Sur 이후 사실.)
+
+아이콘 갱신은 클릭 핸들러에서 즉시 동기 실행하지만, 셸 명령어 실행(`FocusActionRunner.run`)은 백그라운드 큐(`DispatchQueue.global(qos: .userInitiated)`)로 분리함 — `shortcuts run`이 XPC 왕복으로 0.5~2초 걸릴 수 있어 메인 스레드를 막으면 클릭이 멈춘 것처럼 느껴짐 (최종 리뷰에서 수정됨).
 
 ## 최초 설정 (수동, 1회)
 
@@ -36,7 +38,7 @@ Swift Package 단일 타깃(executable, AppKit), Xcode 프로젝트 없음, Elec
 
 ## 오류 처리
 
-`shortcuts run "FocusOn"`이 실패하면(예: 샷컷 아직 안 만들었을 때) macOS가 자체적으로 "Shortcut not found" 시스템 오류를 띄움 — 앱이 따로 중복 처리 안 함. 재시도 안 하고, 시계 숨김 단계 롤백도 안 함(`defaults write`엔 의미 있는 롤백이 없음 — 그냥 다시 클릭하면 됨). 개인용 자동화 트리거일 뿐, 트랜잭션 보장이 필요한 시스템 아님.
+`shortcuts run "FocusOn"`이 실패하면(예: 샷컷 아직 안 만들었을 때) `FocusActionRunner.run`이 각 명령어의 종료 코드를 확인해 `Bool`로 성공 여부를 반환함. 실패 시 `StatusItemController`가 메인 스레드로 돌아와 설정 안내 알림(`showSetupInstructions`)을 자동으로 띄움 — 우클릭 메뉴를 거치지 않아도 바로 확인 가능 (최종 리뷰에서 수정됨: 이전엔 macOS가 자체 오류를 띄운다고 가정했지만 실제로는 앱이 아무 피드백도 주지 않는 무음 실패였음). 재시도는 안 하고, 시계 숨김 단계 롤백도 안 함(`defaults write`엔 의미 있는 롤백이 없음 — 그냥 다시 클릭하면 됨). 개인용 자동화 트리거일 뿐, 트랜잭션 보장이 필요한 시스템 아님.
 
 ## 알려진 한계
 

@@ -170,8 +170,8 @@ final class FocusActionTests: XCTestCase {
     func test_turnOnCommands() {
         let commands = FocusAction.turnOn.commands
         XCTAssertEqual(commands, [
-            ["/usr/bin/defaults", "write", "com.apple.controlcenter", "Clock", "-bool", "false"],
-            ["/usr/bin/killall", "SystemUIServer"],
+            ["/usr/bin/defaults", "write", "com.apple.controlcenter", "NSStatusItem VisibleCC Clock", "-int", "0"],
+            ["/usr/bin/killall", "ControlCenter"],
             ["/usr/bin/shortcuts", "run", "FocusOn"]
         ])
     }
@@ -179,13 +179,15 @@ final class FocusActionTests: XCTestCase {
     func test_turnOffCommands() {
         let commands = FocusAction.turnOff.commands
         XCTAssertEqual(commands, [
-            ["/usr/bin/defaults", "write", "com.apple.controlcenter", "Clock", "-bool", "true"],
-            ["/usr/bin/killall", "SystemUIServer"],
+            ["/usr/bin/defaults", "write", "com.apple.controlcenter", "NSStatusItem VisibleCC Clock", "-int", "1"],
+            ["/usr/bin/killall", "ControlCenter"],
             ["/usr/bin/shortcuts", "run", "FocusOff"]
         ])
     }
 }
 ```
+
+> **Revised by final-review fix wave (2026-09-03):** the key/value/process name below were corrected — see `final-review-fix-report.md` for the empirical verification that motivated this.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -203,14 +205,14 @@ enum FocusAction {
         switch self {
         case .turnOn:
             return [
-                ["/usr/bin/defaults", "write", "com.apple.controlcenter", "Clock", "-bool", "false"],
-                ["/usr/bin/killall", "SystemUIServer"],
+                ["/usr/bin/defaults", "write", "com.apple.controlcenter", "NSStatusItem VisibleCC Clock", "-int", "0"],
+                ["/usr/bin/killall", "ControlCenter"],
                 ["/usr/bin/shortcuts", "run", "FocusOn"]
             ]
         case .turnOff:
             return [
-                ["/usr/bin/defaults", "write", "com.apple.controlcenter", "Clock", "-bool", "true"],
-                ["/usr/bin/killall", "SystemUIServer"],
+                ["/usr/bin/defaults", "write", "com.apple.controlcenter", "NSStatusItem VisibleCC Clock", "-int", "1"],
+                ["/usr/bin/killall", "ControlCenter"],
                 ["/usr/bin/shortcuts", "run", "FocusOff"]
             ]
         }
@@ -241,7 +243,9 @@ git commit -m "feat: add FocusAction command mapping"
 - Consumes: `FocusAction.commands` from Task 3.
 - Produces: `struct FocusActionRunner { static func run(_ action: FocusAction) }`. Consumed by `StatusItemController` in Task 6.
 
-No automated test here — running the real commands mutates real system state (Control Center prefs, kills `SystemUIServer`, fires a Shortcut). Per the spec's Testing section, this is verified manually together with Task 6.
+No automated test here — running the real commands mutates real system state (Control Center prefs, kills `ControlCenter`, fires a Shortcut). Per the spec's Testing section, this is verified manually together with Task 6.
+
+> **Revised by final-review fix wave (2026-09-03):** `run` was changed to return `@discardableResult -> Bool` (true only if every command exits status 0), so `StatusItemController` can detect a silent `shortcuts run` failure (e.g. the Shortcuts aren't set up yet) and show the setup alert instead of failing silently. Current implementation:
 
 - [ ] **Step 1: Write the implementation**
 
@@ -249,14 +253,24 @@ No automated test here — running the real commands mutates real system state (
 import Foundation
 
 struct FocusActionRunner {
-    static func run(_ action: FocusAction) {
+    @discardableResult
+    static func run(_ action: FocusAction) -> Bool {
+        var allSucceeded = true
         for command in action.commands {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: command[0])
             process.arguments = Array(command.dropFirst())
-            try? process.run()
-            process.waitUntilExit()
+            do {
+                try process.run()
+                process.waitUntilExit()
+                if process.terminationStatus != 0 {
+                    allSucceeded = false
+                }
+            } catch {
+                allSucceeded = false
+            }
         }
+        return allSucceeded
     }
 }
 ```
@@ -347,6 +361,8 @@ git commit -m "feat: wire NSApplication entry point with accessory activation po
 - Consumes: `ToggleState` (Task 2), `FocusAction` + `FocusActionRunner` (Tasks 3–4).
 - Produces: the full menu bar UI. Nothing else depends on this — it's the top of the call graph.
 
+> **Revised by final-review fix wave (2026-09-03):** `toggle()` now dispatches `FocusActionRunner.run` to a background queue (`DispatchQueue.global(qos: .userInitiated)`) instead of running it synchronously on the main thread — `shortcuts run` can take 0.5-2s (XPC round trip) and was blocking the UI/freezing the already-updated icon's redraw. On failure it hops back to the main thread and calls `showSetupInstructions()` automatically. Current implementation:
+
 - [ ] **Step 1: Write the full implementation**
 
 ```swift
@@ -381,7 +397,15 @@ final class StatusItemController: NSObject {
     private func toggle() {
         let isOn = state.toggle()
         updateIcon(isOn: isOn)
-        FocusActionRunner.run(isOn ? .turnOn : .turnOff)
+        let action: FocusAction = isOn ? .turnOn : .turnOff
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let succeeded = FocusActionRunner.run(action)
+            if !succeeded {
+                DispatchQueue.main.async {
+                    self?.showSetupInstructions()
+                }
+            }
+        }
     }
 
     private func updateIcon(isOn: Bool) {
