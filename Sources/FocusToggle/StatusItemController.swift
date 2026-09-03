@@ -3,6 +3,7 @@ import AppKit
 final class StatusItemController: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let state = ToggleState()
+    private let clockOverlay = ClockOverlayController()
 
     override init() {
         super.init()
@@ -29,6 +30,11 @@ final class StatusItemController: NSObject {
     private func toggle() {
         let isOn = state.toggle()
         updateIcon(isOn: isOn)
+        if isOn {
+            clockOverlay.show()
+        } else {
+            clockOverlay.hide()
+        }
         let action: FocusAction = isOn ? .turnOn : .turnOff
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let succeeded = FocusActionRunner.run(action)
