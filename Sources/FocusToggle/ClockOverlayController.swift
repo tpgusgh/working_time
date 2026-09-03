@@ -2,9 +2,14 @@ import AppKit
 import ApplicationServices
 
 enum ClockOverlayGeometry {
-    static func overlayFrame(forScreen screenFrame: CGRect, primaryScreenFrame: CGRect, clockFrame: CGRect, padding: CGFloat) -> CGRect {
+    // `sourceScreenFrame` is the frame of whichever screen the clock was
+    // actually read from (AX reports the clock on whichever display is
+    // currently active, not always the system's primary display) — the
+    // "distance from the right edge" offset is computed relative to that
+    // screen, then reapplied to every other connected screen.
+    static func overlayFrame(forScreen screenFrame: CGRect, sourceScreenFrame: CGRect, clockFrame: CGRect, padding: CGFloat) -> CGRect {
         let padded = clockFrame.insetBy(dx: -padding, dy: -padding)
-        let distanceFromRightEdge = primaryScreenFrame.maxX - padded.maxX
+        let distanceFromRightEdge = sourceScreenFrame.maxX - padded.maxX
         let x = screenFrame.maxX - distanceFromRightEdge - padded.width
         let y = screenFrame.maxY - padded.minY - padded.height
         return CGRect(x: x, y: y, width: padded.width, height: padded.height)
@@ -21,11 +26,20 @@ final class ClockOverlayController {
             presentAccessibilityAlert()
             return
         }
-        guard let primaryScreen = NSScreen.screens.first else { return }
+        guard !NSScreen.screens.isEmpty else { return }
+        // The clock's global X position tells us which screen it's actually
+        // on — that's the reference for the "distance from right edge"
+        // offset, regardless of which screen the system considers primary.
+        // X-only check: clockFrame's Y is in AX's top-left-origin space,
+        // NSScreen.frame's Y is AppKit's bottom-left-origin space, so they
+        // aren't directly comparable — X ranges are enough to tell screens
+        // apart in a horizontal arrangement, which is what matters here.
+        let sourceScreen = NSScreen.screens.first { $0.frame.minX <= clockFrame.midX && clockFrame.midX < $0.frame.maxX }
+            ?? NSScreen.screens[0]
         for screen in NSScreen.screens {
             let frame = ClockOverlayGeometry.overlayFrame(
                 forScreen: screen.frame,
-                primaryScreenFrame: primaryScreen.frame,
+                sourceScreenFrame: sourceScreen.frame,
                 clockFrame: clockFrame,
                 padding: overlayPadding
             )
