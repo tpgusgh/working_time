@@ -5,10 +5,14 @@ final class StatusItemController: NSObject {
     private let state = ToggleState()
     private let clockOverlay = ClockOverlayController()
     private var scheduledOffTimer: Timer?
+    private let settingsWindowController = SettingsWindowController()
 
     override init() {
         super.init()
         configureButton()
+        settingsWindowController.onIconStyleChanged = { [weak self] in
+            self?.updateIcon(isOn: self?.state.isOn ?? false)
+        }
     }
 
     private func configureButton() {
@@ -31,10 +35,12 @@ final class StatusItemController: NSObject {
     private func toggle() {
         let isOn = state.toggle()
         updateIcon(isOn: isOn)
-        if isOn {
-            clockOverlay.show()
-        } else {
-            clockOverlay.hide()
+        if !AppSettings.shared.dndOnlyMode {
+            if isOn {
+                clockOverlay.show()
+            } else {
+                clockOverlay.hide()
+            }
         }
         scheduledOffTimer?.invalidate()
         scheduledOffTimer = nil
@@ -89,14 +95,18 @@ final class StatusItemController: NSObject {
     }
 
     private func updateIcon(isOn: Bool) {
+        let style = AppSettings.shared.iconStyle
         statusItem.button?.image = NSImage(
-            systemSymbolName: isOn ? "moon.fill" : "moon",
+            systemSymbolName: isOn ? style.onSymbol : style.offSymbol,
             accessibilityDescription: "포커스 토글"
         )
     }
 
     private func showContextMenu() {
         let menu = NSMenu()
+        let settingsItem = NSMenuItem(title: "설정...", action: #selector(openSettings), keyEquivalent: "")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
         let setupItem = NSMenuItem(title: "설정 방법", action: #selector(showSetupInstructions), keyEquivalent: "")
         setupItem.target = self
         menu.addItem(setupItem)
@@ -108,6 +118,12 @@ final class StatusItemController: NSObject {
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
+    }
+
+    @objc private func openSettings() {
+        settingsWindowController.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindowController.window?.makeKeyAndOrderFront(nil)
     }
 
     @objc private func showSetupInstructions() {
