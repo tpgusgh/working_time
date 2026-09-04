@@ -89,3 +89,24 @@ AX는 시계 위치를 물을 때마다 "현재 활성화된 디스플레이"의
 켜질 때(좌클릭) 토글 자체는 그대로 즉시 실행되고, 그 직후 시간 설정 알럿(`NSDatePicker`, 시:분)이 뜸 — "설정" 누르면 그 시각에 자동으로 꺼지도록 `Timer` 하나 예약, "설정 안 함" 누르면 기존과 동일하게 수동 토글만 있음. 매번 켤 때마다 새로 정하는 방식이라 영속화 안 함 (앱 전체 원칙과 일관됨). 이미 지난 시간을 입력하면 `Calendar.nextDate(after:matching:matchingPolicy:.nextTime)`가 자동으로 다음날 그 시각으로 잡아줌 — 별도 예외 처리 안 함.
 
 예약 시각이 되면: 수동으로 껐을 때와 같은 경로로 꺼짐(오버레이 숨김, DND 끔, 아이콘 갱신) + `ShiftEndNotificationController`가 연결된 모든 화면에 큰 흰 글씨 검은 배경 전체화면 창을 띄우고 5초 뒤 자동으로 닫음. 수동으로 먼저 끄거나 다시 토글하면 대기 중이던 타이머는 취소됨(`scheduledOffTimer?.invalidate()`).
+
+## 앱 아이콘 + DMG 배포
+
+`icon.png`(레포 루트)를 `build-app.sh`가 여러 크기로 리사이즈해서 `AppIcon.icns`로 만들고 `Info.plist`의 `CFBundleIconFile`에 연결함. `build-dmg.sh`는 그 `.app`을 `/Applications` 심볼릭 링크와 함께 DMG로 패키징 — 더블클릭하면 드래그 설치 화면 뜸.
+
+## 설정 창 (아이콘 스타일 / DND-only / 자동 스케줄)
+
+우클릭 → "설정..."에서 여는 `NSWindow` 하나(`SettingsWindowController`). `AppSettings`가 `UserDefaults`로 영속화하는 항목:
+- **메뉴바 아이콘 스타일**: 달/체크/번개/별 중 선택 (`MenuBarIconStyle`, 각각 on/off SF Symbol 쌍).
+- **DND만 사용**: 켜면 토글 시 `ClockOverlayController.show()/hide()`를 건너뜀 — 시계는 그대로 두고 Focus만 켜고 끔.
+- **자동 스케줄**: 매일 반복되는 켜짐/꺼짐 시각. `AutoScheduleController`가 매번 다음 발생 시각으로 자기 자신을 재예약하는 1회성 `Timer`로 구현 — 반복 `Timer`의 드리프트/DST 문제를 피함.
+
+이 세 가지는 토글 on/off 상태(항상 `false`로 시작)와 다른 범주로, 앱 재실행 후에도 유지되도록 의도적으로 영속화함 — "설정"이라는 개념 자체가 그런 거라서, 기존 "영속화 없음" 원칙은 온/오프 상태에만 적용됨.
+
+## 미디어 컨트롤 (좌클릭 팝오버)
+
+좌클릭이 기존 "즉시 토글"에서 `NSPopover`(`NowPlayingPopoverViewController`)를 여는 것으로 바뀜 — 곡 아트워크/제목/아티스트/진행바, 이전·재생·다음 버튼, 그 아래 포커스 켜기/끄기 버튼. 우클릭 메뉴는 설정/설정 방법/종료만 남음.
+
+구현은 비공식 `MediaRemote.framework`(`/System/Library/PrivateFrameworks/MediaRemote.framework`)를 `dlopen`/`dlsym`으로 로드해서 씀 — 공개 API 없음. 재생 명령(`MRMediaRemoteSendCommand`, 이전/재생·일시정지/다음)은 서명 상태와 무관하게 항상 작동함. 곡 정보 읽기(`MRMediaRemoteGetNowPlayingInfo`)는 별개로 `MRMediaRemoteRegisterForNowPlayingNotifications`를 먼저 호출해야 브라우저 탭(유튜브 뮤직 등) 메타데이터가 잡힘 — 안 하면 네이티브 앱(Music.app)만 보임, 라이브로 검증함.
+
+**알려진 한계 (해결 안 됨, 유료 회피책만 있음)**: 이 앱은 ad-hoc 서명이라 `MRMediaRemoteGetNowPlayingInfo`가 항상 빈 dict를 돌려줌 — 곡 제목/아티스트/진행바가 절대 안 뜸, "재생 중인 곡 없음"으로만 표시됨. Apple 정식 서명(`/usr/bin/swift`, TeamID 있음)으로 실행한 동일 코드는 정상 작동하는 걸 직접 비교해서 확인함 — 이 정보 읽기 API 자체가 Apple Developer ID 서명(연 $99)을 요구하는 것으로 보임, 프라이버시 목적으로 추정. 활성화 정책(`.accessory`/`.regular`), 등록 호출, 브라우저 탭 상태 등 다른 가설은 다 배제됨. 사용자가 무료로 그냥 두기로 결정함 — 컨트롤 버튼(이전/재생/다음/포커스)은 정상 작동.
