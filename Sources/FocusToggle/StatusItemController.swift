@@ -7,6 +7,9 @@ final class StatusItemController: NSObject {
     private var scheduledOffTimer: Timer?
     private let settingsWindowController = SettingsWindowController()
     private let autoScheduleController = AutoScheduleController()
+    private let nowPlaying = NowPlayingController()
+    private let nowPlayingPopover = NSPopover()
+    private lazy var nowPlayingViewController = NowPlayingPopoverViewController(nowPlaying: nowPlaying)
 
     override init() {
         super.init()
@@ -20,6 +23,14 @@ final class StatusItemController: NSObject {
         autoScheduleController.turnOnAction = { [weak self] in self?.applyOn() }
         autoScheduleController.turnOffAction = { [weak self] in self?.applyOff() }
         autoScheduleController.reschedule()
+
+        nowPlayingViewController.onFocusToggle = { [weak self] in
+            guard let self else { return }
+            self.toggle()
+            self.nowPlayingViewController.refresh(isFocusOn: self.state.isOn)
+        }
+        nowPlayingPopover.behavior = .transient
+        nowPlayingPopover.contentViewController = nowPlayingViewController
     }
 
     private func configureButton() {
@@ -35,8 +46,18 @@ final class StatusItemController: NSObject {
         if event.type == .rightMouseUp {
             showContextMenu()
         } else {
-            toggle()
+            showNowPlayingPopover()
         }
+    }
+
+    private func showNowPlayingPopover() {
+        guard let button = statusItem.button else { return }
+        if nowPlayingPopover.isShown {
+            nowPlayingPopover.performClose(nil)
+            return
+        }
+        nowPlayingViewController.refresh(isFocusOn: state.isOn)
+        nowPlayingPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
     private func toggle() {
