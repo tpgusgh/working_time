@@ -6,6 +6,7 @@ final class StatusItemController: NSObject {
     private let clockOverlay = ClockOverlayController()
     private var scheduledOffTimer: Timer?
     private let settingsWindowController = SettingsWindowController()
+    private let autoScheduleController = AutoScheduleController()
 
     override init() {
         super.init()
@@ -13,6 +14,12 @@ final class StatusItemController: NSObject {
         settingsWindowController.onIconStyleChanged = { [weak self] in
             self?.updateIcon(isOn: self?.state.isOn ?? false)
         }
+        settingsWindowController.onScheduleChanged = { [weak self] in
+            self?.autoScheduleController.reschedule()
+        }
+        autoScheduleController.turnOnAction = { [weak self] in self?.applyOn() }
+        autoScheduleController.turnOffAction = { [weak self] in self?.applyOff() }
+        autoScheduleController.reschedule()
     }
 
     private func configureButton() {
@@ -33,18 +40,37 @@ final class StatusItemController: NSObject {
     }
 
     private func toggle() {
-        let isOn = state.toggle()
-        updateIcon(isOn: isOn)
+        if state.isOn {
+            applyOff()
+        } else {
+            applyOn()
+            promptForScheduledOff()
+        }
+    }
+
+    private func applyOn() {
+        guard !state.isOn else { return }
+        _ = state.toggle()
+        updateIcon(isOn: true)
         if !AppSettings.shared.dndOnlyMode {
-            if isOn {
-                clockOverlay.show()
-            } else {
-                clockOverlay.hide()
-            }
+            clockOverlay.show()
+        }
+        runFocusAction(.turnOn)
+    }
+
+    private func applyOff() {
+        guard state.isOn else { return }
+        _ = state.toggle()
+        updateIcon(isOn: false)
+        if !AppSettings.shared.dndOnlyMode {
+            clockOverlay.hide()
         }
         scheduledOffTimer?.invalidate()
         scheduledOffTimer = nil
-        let action: FocusAction = isOn ? .turnOn : .turnOff
+        runFocusAction(.turnOff)
+    }
+
+    private func runFocusAction(_ action: FocusAction) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let succeeded = FocusActionRunner.run(action)
             if !succeeded {
@@ -52,9 +78,6 @@ final class StatusItemController: NSObject {
                     self?.showSetupInstructions()
                 }
             }
-        }
-        if isOn {
-            promptForScheduledOff()
         }
     }
 
@@ -85,12 +108,7 @@ final class StatusItemController: NSObject {
     private func fireScheduledOff() {
         scheduledOffTimer = nil
         guard state.isOn else { return }
-        _ = state.toggle()
-        updateIcon(isOn: false)
-        clockOverlay.hide()
-        DispatchQueue.global(qos: .userInitiated).async {
-            FocusActionRunner.run(.turnOff)
-        }
+        applyOff()
         ShiftEndNotificationController().show(message: "포커스 종료 시간이에요")
     }
 

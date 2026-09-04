@@ -3,11 +3,15 @@ import AppKit
 final class SettingsWindowController: NSWindowController {
     private let iconPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let dndOnlyCheckbox = NSButton(checkboxWithTitle: "방해금지 모드만 사용 (시계는 안 가림)", target: nil, action: nil)
+    private let autoScheduleCheckbox = NSButton(checkboxWithTitle: "자동 스케줄 사용 (매일 반복)", target: nil, action: nil)
+    private let autoOnPicker = NSDatePicker(frame: .zero)
+    private let autoOffPicker = NSDatePicker(frame: .zero)
     var onIconStyleChanged: (() -> Void)?
+    var onScheduleChanged: (() -> Void)?
 
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 140),
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 230),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -23,10 +27,10 @@ final class SettingsWindowController: NSWindowController {
         guard let contentView = window?.contentView else { return }
 
         let iconLabel = NSTextField(labelWithString: "메뉴바 아이콘")
-        iconLabel.frame = NSRect(x: 20, y: 95, width: 100, height: 20)
+        iconLabel.frame = NSRect(x: 20, y: 185, width: 100, height: 20)
         contentView.addSubview(iconLabel)
 
-        iconPopUp.frame = NSRect(x: 120, y: 92, width: 180, height: 26)
+        iconPopUp.frame = NSRect(x: 120, y: 182, width: 180, height: 26)
         for style in MenuBarIconStyle.allCases {
             iconPopUp.addItem(withTitle: style.displayName)
         }
@@ -34,13 +38,40 @@ final class SettingsWindowController: NSWindowController {
         iconPopUp.action = #selector(iconStyleChanged)
         contentView.addSubview(iconPopUp)
 
-        dndOnlyCheckbox.frame = NSRect(x: 20, y: 50, width: 280, height: 24)
+        dndOnlyCheckbox.frame = NSRect(x: 20, y: 145, width: 280, height: 24)
         dndOnlyCheckbox.target = self
         dndOnlyCheckbox.action = #selector(dndOnlyChanged)
         contentView.addSubview(dndOnlyCheckbox)
 
+        autoScheduleCheckbox.frame = NSRect(x: 20, y: 110, width: 280, height: 24)
+        autoScheduleCheckbox.target = self
+        autoScheduleCheckbox.action = #selector(scheduleChanged)
+        contentView.addSubview(autoScheduleCheckbox)
+
+        let onLabel = NSTextField(labelWithString: "켜지는 시각")
+        onLabel.frame = NSRect(x: 40, y: 78, width: 90, height: 20)
+        contentView.addSubview(onLabel)
+
+        autoOnPicker.frame = NSRect(x: 140, y: 75, width: 90, height: 24)
+        autoOnPicker.datePickerElements = .hourMinute
+        autoOnPicker.datePickerMode = .single
+        autoOnPicker.target = self
+        autoOnPicker.action = #selector(scheduleChanged)
+        contentView.addSubview(autoOnPicker)
+
+        let offLabel = NSTextField(labelWithString: "꺼지는 시각")
+        offLabel.frame = NSRect(x: 40, y: 46, width: 90, height: 20)
+        contentView.addSubview(offLabel)
+
+        autoOffPicker.frame = NSRect(x: 140, y: 43, width: 90, height: 24)
+        autoOffPicker.datePickerElements = .hourMinute
+        autoOffPicker.datePickerMode = .single
+        autoOffPicker.target = self
+        autoOffPicker.action = #selector(scheduleChanged)
+        contentView.addSubview(autoOffPicker)
+
         let closeButton = NSButton(title: "닫기", target: self, action: #selector(closeSettings))
-        closeButton.frame = NSRect(x: 220, y: 15, width: 80, height: 28)
+        closeButton.frame = NSRect(x: 220, y: 10, width: 80, height: 28)
         closeButton.bezelStyle = .rounded
         contentView.addSubview(closeButton)
     }
@@ -50,6 +81,17 @@ final class SettingsWindowController: NSWindowController {
         let index = MenuBarIconStyle.allCases.firstIndex(of: settings.iconStyle) ?? 0
         iconPopUp.selectItem(at: index)
         dndOnlyCheckbox.state = settings.dndOnlyMode ? .on : .off
+        autoScheduleCheckbox.state = settings.autoScheduleEnabled ? .on : .off
+
+        var onComponents = DateComponents()
+        onComponents.hour = settings.autoOnHour
+        onComponents.minute = settings.autoOnMinute
+        autoOnPicker.dateValue = Calendar.current.date(from: onComponents) ?? Date()
+
+        var offComponents = DateComponents()
+        offComponents.hour = settings.autoOffHour
+        offComponents.minute = settings.autoOffMinute
+        autoOffPicker.dateValue = Calendar.current.date(from: offComponents) ?? Date()
     }
 
     @objc private func iconStyleChanged() {
@@ -61,6 +103,22 @@ final class SettingsWindowController: NSWindowController {
 
     @objc private func dndOnlyChanged() {
         AppSettings.shared.dndOnlyMode = (dndOnlyCheckbox.state == .on)
+    }
+
+    @objc private func scheduleChanged() {
+        let settings = AppSettings.shared
+        settings.autoScheduleEnabled = (autoScheduleCheckbox.state == .on)
+
+        let calendar = Calendar.current
+        let onComponents = calendar.dateComponents([.hour, .minute], from: autoOnPicker.dateValue)
+        settings.autoOnHour = onComponents.hour ?? 9
+        settings.autoOnMinute = onComponents.minute ?? 0
+
+        let offComponents = calendar.dateComponents([.hour, .minute], from: autoOffPicker.dateValue)
+        settings.autoOffHour = offComponents.hour ?? 18
+        settings.autoOffMinute = offComponents.minute ?? 0
+
+        onScheduleChanged?()
     }
 
     @objc private func closeSettings() {

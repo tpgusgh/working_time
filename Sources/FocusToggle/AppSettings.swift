@@ -40,6 +40,11 @@ final class AppSettings {
     private let defaults = UserDefaults.standard
     private let iconStyleKey = "iconStyle"
     private let dndOnlyModeKey = "dndOnlyMode"
+    private let autoScheduleEnabledKey = "autoScheduleEnabled"
+    private let autoOnHourKey = "autoOnHour"
+    private let autoOnMinuteKey = "autoOnMinute"
+    private let autoOffHourKey = "autoOffHour"
+    private let autoOffMinuteKey = "autoOffMinute"
 
     private init() {}
 
@@ -51,5 +56,30 @@ final class AppSettings {
     var dndOnlyMode: Bool {
         get { defaults.bool(forKey: dndOnlyModeKey) }
         set { defaults.set(newValue, forKey: dndOnlyModeKey) }
+    }
+
+    var autoScheduleEnabled: Bool {
+        get { defaults.bool(forKey: autoScheduleEnabledKey) }
+        set { defaults.set(newValue, forKey: autoScheduleEnabledKey) }
+    }
+
+    var autoOnHour: Int {
+        get { defaults.object(forKey: autoOnHourKey) as? Int ?? 9 }
+        set { defaults.set(newValue, forKey: autoOnHourKey) }
+    }
+
+    var autoOnMinute: Int {
+        get { defaults.object(forKey: autoOnMinuteKey) as? Int ?? 0 }
+        set { defaults.set(newValue, forKey: autoOnMinuteKey) }
+    }
+
+    var autoOffHour: Int {
+        get { defaults.object(forKey: autoOffHourKey) as? Int ?? 18 }
+        set { defaults.set(newValue, forKey: autoOffHourKey) }
+    }
+
+    var autoOffMinute: Int {
+        get { defaults.object(forKey: autoOffMinuteKey) as? Int ?? 0 }
+        set { defaults.set(newValue, forKey: autoOffMinuteKey) }
     }
 }
