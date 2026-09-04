@@ -1,6 +1,6 @@
 import AppKit
 
-final class StatusItemController: NSObject {
+final class StatusItemController: NSObject, NSPopoverDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let state = ToggleState()
     private let clockOverlay = ClockOverlayController()
@@ -10,6 +10,7 @@ final class StatusItemController: NSObject {
     private let nowPlaying = NowPlayingController()
     private let nowPlayingPopover = NSPopover()
     private lazy var nowPlayingViewController = NowPlayingPopoverViewController(nowPlaying: nowPlaying)
+    private var nowPlayingRefreshTimer: Timer?
 
     override init() {
         super.init()
@@ -31,6 +32,12 @@ final class StatusItemController: NSObject {
         }
         nowPlayingPopover.behavior = .transient
         nowPlayingPopover.contentViewController = nowPlayingViewController
+        nowPlayingPopover.delegate = self
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        nowPlayingRefreshTimer?.invalidate()
+        nowPlayingRefreshTimer = nil
     }
 
     private func configureButton() {
@@ -58,6 +65,11 @@ final class StatusItemController: NSObject {
         }
         nowPlayingViewController.refresh(isFocusOn: state.isOn)
         nowPlayingPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        nowPlayingRefreshTimer?.invalidate()
+        nowPlayingRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.nowPlayingViewController.refresh(isFocusOn: self.state.isOn)
+        }
     }
 
     private func toggle() {
