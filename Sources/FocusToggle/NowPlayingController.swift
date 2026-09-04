@@ -52,6 +52,16 @@ final class NowPlayingController {
     // which is simplest done as one linear pass. MediaRemote's callback runs
     // on DispatchQueue.global(), so waiting on the calling thread never
     // deadlocks even when called from the main thread.
+    // Known limitation, verified empirically: this returns an empty
+    // dictionary (title/artist/etc. all nil) when the app is ad-hoc signed,
+    // even though sendCommand() above works fine either way. A raw `swift
+    // file.swift` script (which runs as the properly Apple-signed
+    // /usr/bin/swift process) gets full metadata; our ad-hoc-signed .app
+    // does not. This looks like a privacy restriction MediaRemote enforces
+    // on the *info-reading* API specifically — commands are allowed from
+    // any process, but real playback metadata needs an Apple Developer ID
+    // signature (not just any codesign), which costs $99/year and isn't
+    // set up here. No free workaround found.
     func fetchNowPlaying(timeout: TimeInterval = 0.5) -> NowPlayingInfo? {
         guard let getNowPlayingInfo else { return nil }
         let semaphore = DispatchSemaphore(value: 0)
