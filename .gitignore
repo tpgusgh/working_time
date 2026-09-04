@@ -2,3 +2,5 @@
 .superpowers/
 FocusToggle.app/
 .build/
+FocusToggle.dmg
+.dmg-staging/
