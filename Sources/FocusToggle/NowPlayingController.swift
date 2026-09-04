@@ -3,6 +3,7 @@ import AppKit
 final class NowPlayingController {
     private typealias GetInfoFunction = @convention(c) (DispatchQueue, @convention(block) @escaping ([String: Any]) -> Void) -> Void
     private typealias SendCommandFunction = @convention(c) (Int, AnyObject?) -> Bool
+    private typealias RegisterFunction = @convention(c) (DispatchQueue) -> Void
 
     private enum Command: Int {
         case togglePlayPause = 2
@@ -33,6 +34,16 @@ final class NowPlayingController {
             sendCommand = unsafeBitCast(sym, to: SendCommandFunction.self)
         } else {
             sendCommand = nil
+        }
+        // Browser tabs (YouTube Music, etc.) don't populate GetNowPlayingInfo
+        // at all unless the process has registered as a now-playing-info
+        // listener first — native apps (Music.app) work either way, but
+        // registering is required for the browser case. Verified empirically:
+        // without this call, a playing YouTube Music tab returns an empty
+        // dictionary from GetNowPlayingInfo.
+        if let handle, let sym = dlsym(handle, "MRMediaRemoteRegisterForNowPlayingNotifications") {
+            let register = unsafeBitCast(sym, to: RegisterFunction.self)
+            register(DispatchQueue.global())
         }
     }
 
