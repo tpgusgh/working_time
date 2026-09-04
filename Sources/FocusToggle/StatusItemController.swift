@@ -142,7 +142,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         scheduledOffTimer = nil
         guard state.isOn else { return }
         applyOff()
-        ShiftEndNotificationController().show(message: "포커스 종료 시간이에요")
+        ShiftEndNotificationController().show(message: AppSettings.shared.notificationMessage)
     }
 
     private func updateIcon(isOn: Bool) {

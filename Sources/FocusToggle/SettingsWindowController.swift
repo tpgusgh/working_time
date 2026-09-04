@@ -1,17 +1,18 @@
 import AppKit
 
-final class SettingsWindowController: NSWindowController {
+final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private let iconPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let dndOnlyCheckbox = NSButton(checkboxWithTitle: "방해금지 모드만 사용 (시계는 안 가림)", target: nil, action: nil)
     private let autoScheduleCheckbox = NSButton(checkboxWithTitle: "자동 스케줄 사용 (매일 반복)", target: nil, action: nil)
     private let autoOnPicker = NSDatePicker(frame: .zero)
     private let autoOffPicker = NSDatePicker(frame: .zero)
+    private let notificationMessageField = NSTextField(frame: .zero)
     var onIconStyleChanged: (() -> Void)?
     var onScheduleChanged: (() -> Void)?
 
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 230),
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 280),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -27,10 +28,10 @@ final class SettingsWindowController: NSWindowController {
         guard let contentView = window?.contentView else { return }
 
         let iconLabel = NSTextField(labelWithString: "메뉴바 아이콘")
-        iconLabel.frame = NSRect(x: 20, y: 185, width: 100, height: 20)
+        iconLabel.frame = NSRect(x: 20, y: 240, width: 100, height: 20)
         contentView.addSubview(iconLabel)
 
-        iconPopUp.frame = NSRect(x: 120, y: 182, width: 180, height: 26)
+        iconPopUp.frame = NSRect(x: 120, y: 237, width: 180, height: 26)
         for style in MenuBarIconStyle.allCases {
             iconPopUp.addItem(withTitle: style.displayName)
         }
@@ -38,21 +39,21 @@ final class SettingsWindowController: NSWindowController {
         iconPopUp.action = #selector(iconStyleChanged)
         contentView.addSubview(iconPopUp)
 
-        dndOnlyCheckbox.frame = NSRect(x: 20, y: 145, width: 280, height: 24)
+        dndOnlyCheckbox.frame = NSRect(x: 20, y: 205, width: 280, height: 24)
         dndOnlyCheckbox.target = self
         dndOnlyCheckbox.action = #selector(dndOnlyChanged)
         contentView.addSubview(dndOnlyCheckbox)
 
-        autoScheduleCheckbox.frame = NSRect(x: 20, y: 110, width: 280, height: 24)
+        autoScheduleCheckbox.frame = NSRect(x: 20, y: 170, width: 280, height: 24)
         autoScheduleCheckbox.target = self
         autoScheduleCheckbox.action = #selector(scheduleChanged)
         contentView.addSubview(autoScheduleCheckbox)
 
         let onLabel = NSTextField(labelWithString: "켜지는 시각")
-        onLabel.frame = NSRect(x: 40, y: 78, width: 90, height: 20)
+        onLabel.frame = NSRect(x: 40, y: 138, width: 90, height: 20)
         contentView.addSubview(onLabel)
 
-        autoOnPicker.frame = NSRect(x: 140, y: 75, width: 90, height: 24)
+        autoOnPicker.frame = NSRect(x: 140, y: 135, width: 90, height: 24)
         autoOnPicker.datePickerElements = .hourMinute
         autoOnPicker.datePickerMode = .single
         autoOnPicker.target = self
@@ -60,18 +61,28 @@ final class SettingsWindowController: NSWindowController {
         contentView.addSubview(autoOnPicker)
 
         let offLabel = NSTextField(labelWithString: "꺼지는 시각")
-        offLabel.frame = NSRect(x: 40, y: 46, width: 90, height: 20)
+        offLabel.frame = NSRect(x: 40, y: 106, width: 90, height: 20)
         contentView.addSubview(offLabel)
 
-        autoOffPicker.frame = NSRect(x: 140, y: 43, width: 90, height: 24)
+        autoOffPicker.frame = NSRect(x: 140, y: 103, width: 90, height: 24)
         autoOffPicker.datePickerElements = .hourMinute
         autoOffPicker.datePickerMode = .single
         autoOffPicker.target = self
         autoOffPicker.action = #selector(scheduleChanged)
         contentView.addSubview(autoOffPicker)
 
+        let notificationLabel = NSTextField(labelWithString: "종료 알림 문구")
+        notificationLabel.frame = NSRect(x: 20, y: 74, width: 280, height: 18)
+        contentView.addSubview(notificationLabel)
+
+        notificationMessageField.frame = NSRect(x: 20, y: 48, width: 280, height: 22)
+        notificationMessageField.target = self
+        notificationMessageField.action = #selector(notificationMessageChanged)
+        notificationMessageField.delegate = self
+        contentView.addSubview(notificationMessageField)
+
         let closeButton = NSButton(title: "닫기", target: self, action: #selector(closeSettings))
-        closeButton.frame = NSRect(x: 220, y: 10, width: 80, height: 28)
+        closeButton.frame = NSRect(x: 220, y: 12, width: 80, height: 28)
         closeButton.bezelStyle = .rounded
         contentView.addSubview(closeButton)
     }
@@ -92,6 +103,8 @@ final class SettingsWindowController: NSWindowController {
         offComponents.hour = settings.autoOffHour
         offComponents.minute = settings.autoOffMinute
         autoOffPicker.dateValue = Calendar.current.date(from: offComponents) ?? Date()
+
+        notificationMessageField.stringValue = settings.notificationMessage
     }
 
     @objc private func iconStyleChanged() {
@@ -119,6 +132,15 @@ final class SettingsWindowController: NSWindowController {
         settings.autoOffMinute = offComponents.minute ?? 0
 
         onScheduleChanged?()
+    }
+
+    @objc private func notificationMessageChanged() {
+        let text = notificationMessageField.stringValue
+        AppSettings.shared.notificationMessage = text.isEmpty ? AppSettings.defaultNotificationMessage : text
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+        notificationMessageChanged()
     }
 
     @objc private func closeSettings() {

@@ -45,8 +45,19 @@ final class AppSettings {
     private let autoOnMinuteKey = "autoOnMinute"
     private let autoOffHourKey = "autoOffHour"
     private let autoOffMinuteKey = "autoOffMinute"
+    private let notificationMessageKey = "notificationMessage"
 
     private init() {}
+
+    static let defaultNotificationMessage = "포커스 종료 시간이에요"
+
+    var notificationMessage: String {
+        get {
+            let stored = defaults.string(forKey: notificationMessageKey) ?? ""
+            return stored.isEmpty ? Self.defaultNotificationMessage : stored
+        }
+        set { defaults.set(newValue, forKey: notificationMessageKey) }
+    }
 
     var iconStyle: MenuBarIconStyle {
         get { MenuBarIconStyle(rawValue: defaults.string(forKey: iconStyleKey) ?? "") ?? .moon }
