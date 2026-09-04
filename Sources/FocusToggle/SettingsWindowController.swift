@@ -7,6 +7,8 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
     private let autoOnPicker = NSDatePicker(frame: .zero)
     private let autoOffPicker = NSDatePicker(frame: .zero)
     private let notificationMessageField = NSTextField(frame: .zero)
+    private let statusLabel = NSTextField(labelWithString: "")
+    private var statusResetWorkItem: DispatchWorkItem?
     var onIconStyleChanged: (() -> Void)?
     var onScheduleChanged: (() -> Void)?
 
@@ -81,8 +83,19 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
         notificationMessageField.delegate = self
         contentView.addSubview(notificationMessageField)
 
+        statusLabel.frame = NSRect(x: 20, y: 18, width: 110, height: 16)
+        statusLabel.font = .systemFont(ofSize: 11)
+        statusLabel.textColor = .secondaryLabelColor
+        contentView.addSubview(statusLabel)
+
+        let saveButton = NSButton(title: "저장", target: self, action: #selector(saveSettings))
+        saveButton.frame = NSRect(x: 138, y: 12, width: 80, height: 28)
+        saveButton.bezelStyle = .rounded
+        saveButton.keyEquivalent = "\r"
+        contentView.addSubview(saveButton)
+
         let closeButton = NSButton(title: "닫기", target: self, action: #selector(closeSettings))
-        closeButton.frame = NSRect(x: 220, y: 12, width: 80, height: 28)
+        closeButton.frame = NSRect(x: 222, y: 12, width: 80, height: 28)
         closeButton.bezelStyle = .rounded
         contentView.addSubview(closeButton)
     }
@@ -141,6 +154,21 @@ final class SettingsWindowController: NSWindowController, NSTextFieldDelegate {
 
     func controlTextDidEndEditing(_ notification: Notification) {
         notificationMessageChanged()
+    }
+
+    @objc private func saveSettings() {
+        iconStyleChanged()
+        dndOnlyChanged()
+        scheduleChanged()
+        notificationMessageChanged()
+
+        statusResetWorkItem?.cancel()
+        statusLabel.stringValue = "저장됨"
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.statusLabel.stringValue = ""
+        }
+        statusResetWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: workItem)
     }
 
     @objc private func closeSettings() {
